@@ -87,9 +87,10 @@ namespace Serilog
                 sqliteDbFile.Directory?.Create();
 
                 return loggerConfiguration.Sink(
-                    new SQLiteSink(
+                    new SQLiteSchemaSink(
                         sqliteDbFile.FullName,
                         tableName,
+                        schema: null,
                         formatProvider,
                         storeTimestampInUtc,
                         retentionPeriod,
