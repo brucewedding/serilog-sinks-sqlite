@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+using System.Collections.Generic;
 using Serilog.Debugging;
 
 namespace Serilog
@@ -52,6 +53,7 @@ namespace Serilog
             string sqliteDbPath,
             string tableName = "Logs",
             LogEventLevel restrictedToMinimumLevel = LevelAlias.Minimum,
+            Dictionary<string, string> schema = null,
             IFormatProvider formatProvider = null,
             bool storeTimestampInUtc = false,
             TimeSpan? retentionPeriod = null,
@@ -90,7 +92,7 @@ namespace Serilog
                     new SQLiteSchemaSink(
                         sqliteDbFile.FullName,
                         tableName,
-                        schema: null,
+                        schema,
                         formatProvider,
                         storeTimestampInUtc,
                         retentionPeriod,
