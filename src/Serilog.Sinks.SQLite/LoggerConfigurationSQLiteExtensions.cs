@@ -48,7 +48,7 @@ namespace Serilog
         /// <param name="rollOver">If file size grows past max database size, creating rolling backup</param>
         /// <exception cref="ArgumentException"></exception>
         /// <exception cref="ArgumentNullException">A required parameter is null.</exception>
-        public static LoggerConfiguration SQLite(
+        public static LoggerConfiguration SQLiteSchema(
             this LoggerSinkConfiguration loggerConfiguration,
             string sqliteDbPath,
             string tableName = "Logs",
