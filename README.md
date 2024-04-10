@@ -1,5 +1,5 @@
-# Serilog.Sinks.SQLite
-A lightweight high performance Serilog sink that writes to SQLite database.
+# Serilog.Sinks.SQLite.Schema
+A lightweight high performance Serilog sink that writes to SQLite database using a user-defined schema.
 
 ## Getting started
 Install [Serilog.Sinks.SQLite](https://www.nuget.org/packages/Serilog.Sinks.SQLite) from NuGet
