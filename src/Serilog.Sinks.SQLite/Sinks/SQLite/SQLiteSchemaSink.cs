@@ -150,26 +150,6 @@ namespace Serilog.Sinks.SQLite
             sqlCommand.ExecuteNonQuery();
         }
 
-        //private SQLiteCommand CreateSqlInsertCommand(SQLiteConnection connection)
-        //{
-        //    var sqlInsertText = "INSERT INTO {0} (Timestamp, Level, Exception, RenderedMessage, Properties)";
-        //    sqlInsertText += " VALUES (@timeStamp, @level, @exception, @renderedMessage, @properties)";
-        //    sqlInsertText = string.Format(sqlInsertText, _tableName);
-
-        //    var sqlCommand = connection.CreateCommand();
-        //    sqlCommand.CommandText = sqlInsertText;
-        //    sqlCommand.CommandType = CommandType.Text;
-
-        //    sqlCommand.Parameters.Add(new SQLiteParameter("@timeStamp", DbType.DateTime2));
-        //    sqlCommand.Parameters.Add(new SQLiteParameter("@level", DbType.String));
-        //    sqlCommand.Parameters.Add(new SQLiteParameter("@exception", DbType.String));
-        //    sqlCommand.Parameters.Add(new SQLiteParameter("@renderedMessage", DbType.String));
-        //    sqlCommand.Parameters.Add(new SQLiteParameter("@properties", DbType.String));
-        //    sqlCommand.Parameters["@Timestamp"].Value = logEvent.Timestamp.ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fff");
-
-        //    return sqlCommand;
-        //}
-
         private SQLiteCommand CreateSqlInsertCommand(SQLiteConnection connection)
         {
             var columns = string.Join(", ", _schema.Keys);
