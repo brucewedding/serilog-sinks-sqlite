@@ -26,12 +26,11 @@ using Serilog.Events;
 using Serilog.Sinks.Batch;
 using Serilog.Sinks.Extensions;
 
-namespace Serilog.Sinks.SQLite
+namespace Serilog.Sinks.SQLite.Schema
 {
     internal class SQLiteSchemaSink : BatchProvider, ILogEventSink
     {
         private readonly string _databasePath;
-        private readonly IFormatProvider _formatProvider;
         private readonly bool _storeTimestampInUtc;
         private readonly uint _maxDatabaseSize;
         private readonly bool _rollOver;
@@ -41,7 +40,7 @@ namespace Serilog.Sinks.SQLite
         private const string TimestampFormat = "yyyy-MM-ddTHH:mm:ss.fff";
         private const long BytesPerMb = 1_048_576;
         private const long MaxSupportedPages = 5_242_880;
-        private const long MaxSupportedPageSize = 4096;
+        private const long MaxSupportedPageSize = 65536;
         private const long MaxSupportedDatabaseSize = unchecked(MaxSupportedPageSize * MaxSupportedPages) / 1048576;
         private static SemaphoreSlim semaphoreSlim = new SemaphoreSlim(1, 1);
 
@@ -51,18 +50,16 @@ namespace Serilog.Sinks.SQLite
             string sqlLiteDbPath,
             string tableName,
             Dictionary<string, string> schema,
-            IFormatProvider formatProvider,
             bool storeTimestampInUtc,
             TimeSpan? retentionPeriod,
             TimeSpan? retentionCheckInterval,
-            uint batchSize = 100,
-            uint maxDatabaseSize = 10,
+            uint batchSize = 1000,
+            uint maxDatabaseSize = 10000,
             bool rollOver = true)
             : base(batchSize: (int)batchSize, maxBufferSize: 100_000)
         {
             _databasePath = sqlLiteDbPath;
             _tableName = tableName;
-            _formatProvider = formatProvider;
             _storeTimestampInUtc = storeTimestampInUtc;
             _maxDatabaseSize = maxDatabaseSize;
             _rollOver = rollOver;
@@ -145,7 +142,7 @@ namespace Serilog.Sinks.SQLite
         private void CreateSqlTable(SQLiteConnection sqlConnection)
         {
             var colDefs = _schema.Select(kvp => $"{kvp.Key} {kvp.Value}").Aggregate((current, next) => $"{current}, {next}");
-            var sqlCreateText = $"CREATE TABLE IF NOT EXISTS {_tableName} ({colDefs})";
+            var sqlCreateText = $"CREATE TABLE IF NOT EXISTS \"{_tableName}\"  ({colDefs})";
             var sqlCommand = new SQLiteCommand(sqlCreateText, sqlConnection);
             sqlCommand.ExecuteNonQuery();
         }
@@ -267,35 +264,6 @@ namespace Serilog.Sinks.SQLite
             }
         }
 
-        //private async Task WriteToDatabaseAsync(ICollection<LogEvent> logEventsBatch, SQLiteConnection sqlConnection)
-        //{
-        //    using (var tr = sqlConnection.BeginTransaction())
-        //    {
-        //        using (var sqlCommand = CreateSqlInsertCommand(sqlConnection))
-        //        {
-        //            sqlCommand.Transaction = tr;
-
-        //            foreach (var logEvent in logEventsBatch)
-        //            {
-        //                sqlCommand.Parameters["@timeStamp"].Value = _storeTimestampInUtc
-        //                    ? logEvent.Timestamp.ToUniversalTime().ToString(TimestampFormat)
-        //                    : logEvent.Timestamp.ToString(TimestampFormat);
-        //                sqlCommand.Parameters["@level"].Value = logEvent.Level.ToString();
-        //                sqlCommand.Parameters["@exception"].Value =
-        //                    logEvent.Exception?.ToString() ?? string.Empty;
-        //                sqlCommand.Parameters["@renderedMessage"].Value = logEvent.MessageTemplate.Render(logEvent.Properties, _formatProvider);
-
-        //                sqlCommand.Parameters["@properties"].Value = logEvent.Properties.Count > 0
-        //                    ? logEvent.Properties.Json()
-        //                    : string.Empty;
-
-        //                await sqlCommand.ExecuteNonQueryAsync().ConfigureAwait(false);
-        //            }
-        //            tr.Commit();
-        //        }
-        //    }
-        //}
-
         private async Task WriteToDatabaseAsync(ICollection<LogEvent> logEventsBatch, SQLiteConnection sqlConnection)
         {
             using (var tr = sqlConnection.BeginTransaction())
@@ -310,25 +278,25 @@ namespace Serilog.Sinks.SQLite
                         foreach (var kvp in _schema)
                         {
                             string paramName = $"@{kvp.Key}";
-                            if (kvp.Key.Equals("Timestamp", StringComparison.OrdinalIgnoreCase))
+                            if (kvp.Key.Equals("@Timestamp", StringComparison.OrdinalIgnoreCase))
                             {
                                 sqlCommand.Parameters[paramName].Value = _storeTimestampInUtc
                                     ? logEvent.Timestamp.ToUniversalTime().ToString(TimestampFormat)
                                     : logEvent.Timestamp.ToString(TimestampFormat);
                             }
-                            else if (kvp.Key.Equals("Level", StringComparison.OrdinalIgnoreCase))
+                            else if (kvp.Key.Equals("@Level", StringComparison.OrdinalIgnoreCase))
                             {
                                 sqlCommand.Parameters[paramName].Value = logEvent.Level.ToString();
                             }
-                            else if (kvp.Key.Equals("Exception", StringComparison.OrdinalIgnoreCase))
+                            else if (kvp.Key.Equals("@Exception", StringComparison.OrdinalIgnoreCase))
                             {
                                 sqlCommand.Parameters[paramName].Value = logEvent.Exception?.ToString() ?? string.Empty;
                             }
-                            else if (kvp.Key.Equals("RenderedMessage", StringComparison.OrdinalIgnoreCase))
+                            else if (kvp.Key.Equals("@RenderedMessage", StringComparison.OrdinalIgnoreCase))
                             {
-                                sqlCommand.Parameters[paramName].Value = logEvent.MessageTemplate.Render(logEvent.Properties, _formatProvider);
+                                sqlCommand.Parameters[paramName].Value = logEvent.MessageTemplate.Render(logEvent.Properties, null);
                             }
-                            else if (kvp.Key.Equals("Properties", StringComparison.OrdinalIgnoreCase))
+                            else if (kvp.Key.Equals("@Properties", StringComparison.OrdinalIgnoreCase))
                             {
                                 sqlCommand.Parameters[paramName].Value = logEvent.Properties.Count > 0
                                     ? logEvent.Properties.Json()
@@ -336,11 +304,9 @@ namespace Serilog.Sinks.SQLite
                             }
                             else
                             {
-                                // For other properties in the schema, you may need to extract them from logEvent.Properties
                                 sqlCommand.Parameters[paramName].Value = ExtractValue(logEvent, kvp.Key);
                             }
                         }
-
                         await sqlCommand.ExecuteNonQueryAsync().ConfigureAwait(false);
                     }
 

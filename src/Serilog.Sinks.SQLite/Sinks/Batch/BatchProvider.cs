@@ -43,7 +43,7 @@ namespace Serilog.Sinks.Batch
         private readonly AutoResetEvent _timerResetEvent = new AutoResetEvent(false);
         private readonly SemaphoreSlim _semaphoreSlim = new SemaphoreSlim(1, 1);
 
-        protected BatchProvider(int batchSize = 100, int maxBufferSize = 25_000)
+        protected BatchProvider(int batchSize = 100, int maxBufferSize = 50_000)
         {
             _maxBufferSize = Math.Min(Math.Max(5_000, maxBufferSize), MaxSupportedBufferSize);
             _batchSize     = Math.Min(Math.Max(batchSize, 1), MaxSupportedBatchSize);
