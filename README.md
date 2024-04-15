@@ -2,11 +2,7 @@
 A lightweight high performance Serilog sink that writes to SQLite database using a user-defined schema.
 
 ## Getting started
-Install [Serilog.Sinks.SQLite](https://www.nuget.org/packages/Serilog.Sinks.SQLite) from NuGet
-
-```PowerShell
-Install-Package Serilog.Sinks.SQLite
-```
+Add this project to any existing solution. This solution should have added the Serilog package from Nuget.
 
 Configure logger by calling `WriteTo.SQLite()`
 
