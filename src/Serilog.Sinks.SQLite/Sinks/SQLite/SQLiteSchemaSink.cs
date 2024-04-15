@@ -28,7 +28,7 @@ using Serilog.Sinks.Extensions;
 
 namespace Serilog.Sinks.SQLite.Schema
 {
-    internal class SQLiteSchemaSink : BatchProvider, ILogEventSink
+    internal class SQLiteSchemaSink : BatchProvider, ILogEventSink, IDisposable
     {
         private readonly string _databasePath;
         private readonly bool _storeTimestampInUtc;
@@ -45,6 +45,11 @@ namespace Serilog.Sinks.SQLite.Schema
         private static SemaphoreSlim semaphoreSlim = new SemaphoreSlim(1, 1);
 
         private readonly Dictionary<string, string> _schema;
+
+        protected virtual void Dispose(bool disposing)
+        {
+            base.Dispose(disposing);
+        }
 
         public SQLiteSchemaSink(
             string sqlLiteDbPath,
@@ -105,6 +110,11 @@ namespace Serilog.Sinks.SQLite.Schema
         }
 
         #region ILogEvent implementation
+
+        public void Shutdown()
+        {
+            Dispose(false);
+        }
 
         public void Emit(LogEvent logEvent)
         {
@@ -278,25 +288,25 @@ namespace Serilog.Sinks.SQLite.Schema
                         foreach (var kvp in _schema)
                         {
                             string paramName = $"@{kvp.Key}";
-                            if (kvp.Key.Equals("@Timestamp", StringComparison.OrdinalIgnoreCase))
+                            if (kvp.Key.Equals("Timestamp", StringComparison.OrdinalIgnoreCase))
                             {
                                 sqlCommand.Parameters[paramName].Value = _storeTimestampInUtc
                                     ? logEvent.Timestamp.ToUniversalTime().ToString(TimestampFormat)
                                     : logEvent.Timestamp.ToString(TimestampFormat);
                             }
-                            else if (kvp.Key.Equals("@Level", StringComparison.OrdinalIgnoreCase))
+                            else if (kvp.Key.Equals("Level", StringComparison.OrdinalIgnoreCase))
                             {
                                 sqlCommand.Parameters[paramName].Value = logEvent.Level.ToString();
                             }
-                            else if (kvp.Key.Equals("@Exception", StringComparison.OrdinalIgnoreCase))
+                            else if (kvp.Key.Equals("Exception", StringComparison.OrdinalIgnoreCase))
                             {
                                 sqlCommand.Parameters[paramName].Value = logEvent.Exception?.ToString() ?? string.Empty;
                             }
-                            else if (kvp.Key.Equals("@RenderedMessage", StringComparison.OrdinalIgnoreCase))
+                            else if (kvp.Key.Equals("RenderedMessage", StringComparison.OrdinalIgnoreCase))
                             {
                                 sqlCommand.Parameters[paramName].Value = logEvent.MessageTemplate.Render(logEvent.Properties, null);
                             }
-                            else if (kvp.Key.Equals("@Properties", StringComparison.OrdinalIgnoreCase))
+                            else if (kvp.Key.Equals("Properties", StringComparison.OrdinalIgnoreCase))
                             {
                                 sqlCommand.Parameters[paramName].Value = logEvent.Properties.Count > 0
                                     ? logEvent.Properties.Json()
