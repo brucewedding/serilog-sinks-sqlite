@@ -15,7 +15,7 @@
         <Version>6.0.0</Version>
         <SignAssembly>True</SignAssembly>
         <AssemblyOriginatorKeyFile>Serilog.snk</AssemblyOriginatorKeyFile>
-        <TargetFrameworks>netstandard2.0;net7.0</TargetFrameworks>
+        <TargetFrameworks>netstandard2.1;net8.0</TargetFrameworks>
         <FileVersion>6.0.0.0</FileVersion>
     </PropertyGroup>
     <PropertyGroup>

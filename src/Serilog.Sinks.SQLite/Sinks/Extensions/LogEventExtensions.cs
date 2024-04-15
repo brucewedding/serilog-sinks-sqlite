@@ -41,7 +41,7 @@ namespace Serilog.Sinks.Extensions
             return JsonConvert.SerializeObject(ConvertToDictionary(properties));
         }
 
-        internal static IDictionary<string, object> Dictionary(
+        private static IDictionary<string, object> Dictionary(
             this IReadOnlyDictionary<string, LogEventPropertyValue> properties)
         {
             return ConvertToDictionary(properties);
@@ -81,22 +81,24 @@ namespace Serilog.Sinks.Extensions
 
         private static object Simplify(LogEventPropertyValue data)
         {
-            if (data is ScalarValue value)
-                return value.Value;
+            switch (data)
+            {
+                case ScalarValue value:
+                    return value.Value;
+                // ReSharper disable once SuspiciousTypeConversion.Global
+                case DictionaryValue dictValue:
+                {
+                    var expObject = new ExpandoObject() as IDictionary<string, object>;
+                    foreach (var item in dictValue.Elements) {
+                        if (item.Key.Value is string key)
+                            expObject.Add(key, Simplify(item.Value));
+                    }
 
-            // ReSharper disable once SuspiciousTypeConversion.Global
-            if (data is DictionaryValue dictValue) {
-                var expObject = new ExpandoObject() as IDictionary<string, object>;
-                foreach (var item in dictValue.Elements) {
-                    if (item.Key.Value is string key)
-                        expObject.Add(key, Simplify(item.Value));
+                    return expObject;
                 }
-
-                return expObject;
+                case SequenceValue seq:
+                    return seq.Elements.Select(Simplify).ToArray();
             }
-
-            if (data is SequenceValue seq)
-                return seq.Elements.Select(Simplify).ToArray();
 
             if (!(data is StructureValue str))
                 return null;
@@ -115,7 +117,7 @@ namespace Serilog.Sinks.Extensions
                         return null;
 
                     var expObject = new ExpandoObject() as IDictionary<string, object>;
-                    expObject.Add(key.ToString(), Simplify(str.Properties[1].Value));
+                    expObject.Add(key.ToString() ?? string.Empty, Simplify(str.Properties[1].Value));
 
                     return expObject;
                 }

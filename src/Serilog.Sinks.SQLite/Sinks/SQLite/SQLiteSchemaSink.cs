@@ -125,10 +125,8 @@ namespace Serilog.Sinks.SQLite.Schema
 
         private void InitializeDatabase()
         {
-            using (var conn = GetSqLiteConnection())
-            {
-                CreateSqlTable(conn);
-            }
+            using var conn = GetSqLiteConnection();
+            CreateSqlTable(conn);
         }
 
         private SQLiteConnection GetSqLiteConnection()
@@ -179,15 +177,11 @@ namespace Serilog.Sinks.SQLite.Schema
         private void ApplyRetentionPolicy()
         {
             var epoch = DateTimeOffset.Now.Subtract(_retentionPeriod.Value);
-            using (var sqlConnection = GetSqLiteConnection())
-            {
-                using (var cmd = CreateSqlDeleteCommand(sqlConnection, epoch))
-                {
-                    SelfLog.WriteLine("Deleting log entries older than {0}", epoch);
-                    var ret = cmd.ExecuteNonQuery();
-                    SelfLog.WriteLine($"{ret} records deleted");
-                }
-            }
+            using var sqlConnection = GetSqLiteConnection();
+            using var cmd = CreateSqlDeleteCommand(sqlConnection, epoch);
+            SelfLog.WriteLine("Deleting log entries older than {0}", epoch);
+            var ret = cmd.ExecuteNonQuery();
+            SelfLog.WriteLine($"{ret} records deleted");
         }
 
         private void TruncateLog(SQLiteConnection sqlConnection)
@@ -199,7 +193,7 @@ namespace Serilog.Sinks.SQLite.Schema
             VacuumDatabase(sqlConnection);
         }
 
-        private void VacuumDatabase(SQLiteConnection sqlConnection)
+        private static void VacuumDatabase(SQLiteConnection sqlConnection)
         {
             var cmd = sqlConnection.CreateCommand();
             cmd.CommandText = $"vacuum";
@@ -227,45 +221,43 @@ namespace Serilog.Sinks.SQLite.Schema
             await semaphoreSlim.WaitAsync().ConfigureAwait(false);
             try
             {
-                using (var sqlConnection = GetSqLiteConnection())
+                await using var sqlConnection = GetSqLiteConnection();
+                try
                 {
-                    try
-                    {
-                        await WriteToDatabaseAsync(logEventsBatch, sqlConnection).ConfigureAwait(false);
-                        return true;
-                    }
-                    catch (SQLiteException e)
-                    {
-                        SelfLog.WriteLine(e.Message);
+                    await WriteToDatabaseAsync(logEventsBatch, sqlConnection).ConfigureAwait(false);
+                    return true;
+                }
+                catch (SQLiteException e)
+                {
+                    SelfLog.WriteLine(e.Message);
 
-                        if (e.ResultCode != SQLiteErrorCode.Full)
-                            return false;
-
-                        if (_rollOver == false)
-                        {
-                            SelfLog.WriteLine("Discarding log excessive of max database");
-
-                            return true;
-                        }
-
-                        var dbExtension = Path.GetExtension(_databasePath);
-
-                        var newFilePath = Path.Combine(Path.GetDirectoryName(_databasePath) ?? "Logs",
-                            $"{Path.GetFileNameWithoutExtension(_databasePath)}-{DateTime.Now:yyyyMMdd_HHmmss.ff}{dbExtension}");
-                         
-                        File.Copy(_databasePath, newFilePath, true);
-
-                        TruncateLog(sqlConnection);
-                        await WriteToDatabaseAsync(logEventsBatch, sqlConnection).ConfigureAwait(false);
-
-                        SelfLog.WriteLine($"Rolling database to {newFilePath}");
-                        return true;
-                    }
-                    catch (Exception e)
-                    {
-                        SelfLog.WriteLine(e.Message);
+                    if (e.ResultCode != SQLiteErrorCode.Full)
                         return false;
+
+                    if (_rollOver == false)
+                    {
+                        SelfLog.WriteLine("Discarding log excessive of max database");
+
+                        return true;
                     }
+
+                    var dbExtension = Path.GetExtension(_databasePath);
+
+                    var newFilePath = Path.Combine(Path.GetDirectoryName(_databasePath) ?? "Logs",
+                        $"{Path.GetFileNameWithoutExtension(_databasePath)}-{DateTime.Now:yyyyMMdd_HHmmss.ff}{dbExtension}");
+                         
+                    File.Copy(_databasePath, newFilePath, true);
+
+                    TruncateLog(sqlConnection);
+                    await WriteToDatabaseAsync(logEventsBatch, sqlConnection).ConfigureAwait(false);
+
+                    SelfLog.WriteLine($"Rolling database to {newFilePath}");
+                    return true;
+                }
+                catch (Exception e)
+                {
+                    SelfLog.WriteLine(e.Message);
+                    return false;
                 }
             }
             finally
@@ -274,58 +266,54 @@ namespace Serilog.Sinks.SQLite.Schema
             }
         }
 
-        private async Task WriteToDatabaseAsync(ICollection<LogEvent> logEventsBatch, SQLiteConnection sqlConnection)
+        private async Task WriteToDatabaseAsync(IEnumerable<LogEvent> logEventsBatch, SQLiteConnection sqlConnection)
         {
-            using (var tr = sqlConnection.BeginTransaction())
+            await using var tr = sqlConnection.BeginTransaction();
+            await using var sqlCommand = CreateSqlInsertCommand(sqlConnection);
+            sqlCommand.Transaction = tr;
+
+            foreach (var logEvent in logEventsBatch)
             {
-                using (var sqlCommand = CreateSqlInsertCommand(sqlConnection))
+                // Assuming your schema key matches the LogEvent properties or you have a way to map them
+                foreach (var kvp in _schema)
                 {
-                    sqlCommand.Transaction = tr;
-
-                    foreach (var logEvent in logEventsBatch)
+                    var paramName = $"@{kvp.Key}";
+                    if (kvp.Key.Equals("Timestamp", StringComparison.OrdinalIgnoreCase))
                     {
-                        // Assuming your schema key matches the LogEvent properties or you have a way to map them
-                        foreach (var kvp in _schema)
-                        {
-                            string paramName = $"@{kvp.Key}";
-                            if (kvp.Key.Equals("Timestamp", StringComparison.OrdinalIgnoreCase))
-                            {
-                                sqlCommand.Parameters[paramName].Value = _storeTimestampInUtc
-                                    ? logEvent.Timestamp.ToUniversalTime().ToString(TimestampFormat)
-                                    : logEvent.Timestamp.ToString(TimestampFormat);
-                            }
-                            else if (kvp.Key.Equals("Level", StringComparison.OrdinalIgnoreCase))
-                            {
-                                sqlCommand.Parameters[paramName].Value = logEvent.Level.ToString();
-                            }
-                            else if (kvp.Key.Equals("Exception", StringComparison.OrdinalIgnoreCase))
-                            {
-                                sqlCommand.Parameters[paramName].Value = logEvent.Exception?.ToString() ?? string.Empty;
-                            }
-                            else if (kvp.Key.Equals("RenderedMessage", StringComparison.OrdinalIgnoreCase))
-                            {
-                                sqlCommand.Parameters[paramName].Value = logEvent.MessageTemplate.Render(logEvent.Properties, null);
-                            }
-                            else if (kvp.Key.Equals("Properties", StringComparison.OrdinalIgnoreCase))
-                            {
-                                sqlCommand.Parameters[paramName].Value = logEvent.Properties.Count > 0
-                                    ? logEvent.Properties.Json()
-                                    : string.Empty;
-                            }
-                            else
-                            {
-                                sqlCommand.Parameters[paramName].Value = ExtractValue(logEvent, kvp.Key);
-                            }
-                        }
-                        await sqlCommand.ExecuteNonQueryAsync().ConfigureAwait(false);
+                        sqlCommand.Parameters[paramName].Value = _storeTimestampInUtc
+                            ? logEvent.Timestamp.ToUniversalTime().ToString(TimestampFormat)
+                            : logEvent.Timestamp.ToString(TimestampFormat);
                     }
-
-                    tr.Commit();
+                    else if (kvp.Key.Equals("Level", StringComparison.OrdinalIgnoreCase))
+                    {
+                        sqlCommand.Parameters[paramName].Value = logEvent.Level.ToString();
+                    }
+                    else if (kvp.Key.Equals("Exception", StringComparison.OrdinalIgnoreCase))
+                    {
+                        sqlCommand.Parameters[paramName].Value = logEvent.Exception?.ToString() ?? string.Empty;
+                    }
+                    else if (kvp.Key.Equals("RenderedMessage", StringComparison.OrdinalIgnoreCase))
+                    {
+                        sqlCommand.Parameters[paramName].Value = logEvent.MessageTemplate.Render(logEvent.Properties, null);
+                    }
+                    else if (kvp.Key.Equals("Properties", StringComparison.OrdinalIgnoreCase))
+                    {
+                        sqlCommand.Parameters[paramName].Value = logEvent.Properties.Count > 0
+                            ? logEvent.Properties.Json()
+                            : string.Empty;
+                    }
+                    else
+                    {
+                        sqlCommand.Parameters[paramName].Value = ExtractValue(logEvent, kvp.Key);
+                    }
                 }
+                await sqlCommand.ExecuteNonQueryAsync().ConfigureAwait(false);
             }
+
+            tr.Commit();
         }
 
-        private object ExtractValue(LogEvent logEvent, string key)
+        private static object ExtractValue(LogEvent logEvent, string key)
         {
             // Implement the logic to extract the value based on key from logEvent
             // For example, if your log event properties contain additional custom data
